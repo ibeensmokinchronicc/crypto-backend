@@ -3,64 +3,119 @@ const crypto = require("crypto");
 
 const app = express();
 
-// ✅ CORS FIX (allows frontend to connect)
+// CORS
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "*");
   next();
 });
 
-// ✅ Test route
 app.get("/", (req, res) => {
   res.send("Crypto backend running ✅");
 });
 
-// ✅ Gemini sync route
+// ================= GEMINI =================
+async function getGemini() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const apiSecret = process.env.GEMINI_API_SECRET;
+
+  const payload = {
+    request: "/v1/balances",
+    nonce: Date.now().toString()
+  };
+
+  const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString("base64");
+
+  const signature = crypto
+    .createHmac("sha384", apiSecret)
+    .update(payloadBase64)
+    .digest("hex");
+
+  const res = await fetch("https://api.gemini.com/v1/balances", {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/plain",
+      "X-GEMINI-APIKEY": apiKey,
+      "X-GEMINI-PAYLOAD": payloadBase64,
+      "X-GEMINI-SIGNATURE": signature
+    }
+  });
+
+  return await res.json();
+}
+
+// ================= COINBASE (CDP) =================
+function createJWT() {
+  const keyName = process.env.COINBASE_API_KEY;
+  const privateKey = process.env.COINBASE_PRIVATE_KEY;
+
+  const header = {
+    alg: "ES256",
+    typ: "JWT",
+    kid: keyName
+  };
+
+  const payload = {
+    iss: "cdp",
+    sub: keyName,
+    nbf: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 120,
+    aud: ["https://api.coinbase.com"]
+  };
+
+  function base64url(input) {
+    return Buffer.from(JSON.stringify(input))
+      .toString("base64")
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+  }
+
+  const encodedHeader = base64url(header);
+  const encodedPayload = base64url(payload);
+
+  const data = `${encodedHeader}.${encodedPayload}`;
+
+  const sign = crypto.createSign("SHA256");
+  sign.update(data);
+  sign.end();
+
+  const signature = sign.sign(privateKey, "base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+
+  return `${data}.${signature}`;
+}
+
+async function getCoinbase() {
+  const token = createJWT();
+
+  const res = await fetch("https://api.coinbase.com/api/v3/brokerage/accounts", {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  return await res.json();
+}
+
+// ================= SYNC =================
 app.get("/sync", async (req, res) => {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    const apiSecret = process.env.GEMINI_API_SECRET;
+    const gemini = await getGemini();
+    const coinbase = await getCoinbase();
 
-    if (!apiKey || !apiSecret) {
-      return res.json({ error: "Missing API keys" });
-    }
-
-    const payload = {
-      request: "/v1/balances",
-      nonce: Date.now().toString()
-    };
-
-    const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString("base64");
-
-    const signature = crypto
-      .createHmac("sha384", apiSecret)
-      .update(payloadBase64)
-      .digest("hex");
-
-    const response = await fetch("https://api.gemini.com/v1/balances", {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain",
-        "X-GEMINI-APIKEY": apiKey,
-        "X-GEMINI-PAYLOAD": payloadBase64,
-        "X-GEMINI-SIGNATURE": signature
-      }
+    res.json({
+      gemini,
+      coinbase
     });
 
-    const data = await response.json();
-
-    res.json(data);
   } catch (err) {
     console.error(err);
-    res.json({
-      error: "sync failed",
-      details: err.message
-    });
+    res.json({ error: "sync failed", details: err.message });
   }
 });
 
-// ✅ Start server
+// START
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
-});
+app.listen(PORT, () => console.log("Running"));
