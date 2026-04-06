@@ -1,59 +1,40 @@
 const express = require("express");
-const crypto = require("crypto");
 
 const app = express();
 
-// ✅ Home route
+// ✅ Your holdings (edit this anytime)
+let portfolio = [
+  { id: "bitcoin", amount: 0.5 },
+  { id: "ethereum", amount: 1.2 },
+  { id: "solana", amount: 3 }
+];
+
+// ✅ Home
 app.get("/", (req,res)=>{
   res.send("Crypto backend running ✅");
 });
 
-// 🔄 Sync route (REAL Coinbase FIXED)
+// 🔄 Sync with REAL PRICES
 app.get("/sync", async (req,res)=>{
 
   try {
 
-    const apiKey = process.env.COINBASE_API_KEY;
-    const apiSecret = process.env.COINBASE_API_SECRET;
-
-    const timestamp = Math.floor(Date.now() / 1000).toString();
-    const method = "GET";
-    const requestPath = "/v2/accounts";
-
-    const message = timestamp + method + requestPath;
-
-    const signature = crypto
-      .createHmac("sha256", apiSecret)
-      .update(message)
-      .digest("base64"); // ✅ IMPORTANT FIX
-
-    const response = await fetch("https://api.coinbase.com/v2/accounts", {
-      method: "GET",
-      headers: {
-        "CB-ACCESS-KEY": apiKey,
-        "CB-ACCESS-SIGN": signature,
-        "CB-ACCESS-TIMESTAMP": timestamp,
-        "CB-VERSION": "2023-10-16"
-      }
-    });
-
-    const data = await response.json();
-
-    // 👇 DEBUG (so we can see errors if any)
-    if (!data.data) {
-      return res.json({ error: data });
-    }
-
     let balances = [];
 
-    data.data.forEach(acc => {
-      if (parseFloat(acc.balance.amount) > 0) {
-        balances.push({
-          id: acc.currency.toLowerCase(),
-          amount: parseFloat(acc.balance.amount)
-        });
-      }
-    });
+    for (let coin of portfolio) {
+
+      const response = await fetch(
+        `https://api.coinbase.com/v2/prices/${coin.id.toUpperCase()}-USD/spot`
+      );
+
+      const data = await response.json();
+
+      balances.push({
+        id: coin.id,
+        amount: coin.amount,
+        price: parseFloat(data.data.amount)
+      });
+    }
 
     res.json({balances, rewards: []});
 
@@ -64,6 +45,6 @@ app.get("/sync", async (req,res)=>{
 
 });
 
-// 🚀 Start server
+// 🚀 Start
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, ()=>console.log("Running"));
