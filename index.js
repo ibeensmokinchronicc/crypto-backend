@@ -8,9 +8,13 @@ app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 
-// ENV
+// ==========================
+// ENV VARIABLES
+// ==========================
 const CB_KEY = process.env.COINBASE_API_KEY;
-const CB_SECRET = process.env.COINBASE_API_SECRET;
+
+// 🔥 FIXED LINE (IMPORTANT)
+const CB_SECRET = process.env.COINBASE_API_SECRET.replace(/\\n/g, "\n");
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_SECRET = process.env.GEMINI_API_SECRET;
@@ -106,6 +110,7 @@ app.get("/sync", async (req, res) => {
   res.json({ coinbase, gemini });
 });
 
+// ==========================
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
