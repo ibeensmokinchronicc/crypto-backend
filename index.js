@@ -3,14 +3,27 @@ const crypto = require("crypto");
 
 const app = express();
 
+// ✅ CORS FIX (allows frontend to connect)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "*");
+  next();
+});
+
+// ✅ Test route
 app.get("/", (req, res) => {
   res.send("Crypto backend running ✅");
 });
 
+// ✅ Gemini sync route
 app.get("/sync", async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     const apiSecret = process.env.GEMINI_API_SECRET;
+
+    if (!apiKey || !apiSecret) {
+      return res.json({ error: "Missing API keys" });
+    }
 
     const payload = {
       request: "/v1/balances",
@@ -39,9 +52,15 @@ app.get("/sync", async (req, res) => {
     res.json(data);
   } catch (err) {
     console.error(err);
-    res.json({ error: "sync failed", details: err.message });
+    res.json({
+      error: "sync failed",
+      details: err.message
+    });
   }
 });
 
+// ✅ Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server running on port " + PORT));
+app.listen(PORT, () => {
+  console.log("Server running on port " + PORT);
+});
