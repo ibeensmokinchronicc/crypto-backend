@@ -1,50 +1,47 @@
 const express = require("express");
+const crypto = require("crypto");
 
 const app = express();
 
-// ✅ Your holdings (edit this anytime)
-let portfolio = [
-  { id: "bitcoin", amount: 0.5 },
-  { id: "ethereum", amount: 1.2 },
-  { id: "solana", amount: 3 }
-];
-
-// ✅ Home
-app.get("/", (req,res)=>{
+app.get("/", (req, res) => {
   res.send("Crypto backend running ✅");
 });
 
-// 🔄 Sync with REAL PRICES
-app.get("/sync", async (req,res)=>{
-
+app.get("/sync", async (req, res) => {
   try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    const apiSecret = process.env.GEMINI_API_SECRET;
 
-    let balances = [];
+    const payload = {
+      request: "/v1/balances",
+      nonce: Date.now().toString()
+    };
 
-    for (let coin of portfolio) {
+    const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString("base64");
 
-      const response = await fetch(
-        `https://api.coinbase.com/v2/prices/${coin.id.toUpperCase()}-USD/spot`
-      );
+    const signature = crypto
+      .createHmac("sha384", apiSecret)
+      .update(payloadBase64)
+      .digest("hex");
 
-      const data = await response.json();
+    const response = await fetch("https://api.gemini.com/v1/balances", {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain",
+        "X-GEMINI-APIKEY": apiKey,
+        "X-GEMINI-PAYLOAD": payloadBase64,
+        "X-GEMINI-SIGNATURE": signature
+      }
+    });
 
-      balances.push({
-        id: coin.id,
-        amount: coin.amount,
-        price: parseFloat(data.data.amount)
-      });
-    }
+    const data = await response.json();
 
-    res.json({balances, rewards: []});
-
-  } catch(e){
-    console.log(e);
-    res.status(500).json({error:"sync failed"});
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.json({ error: "sync failed", details: err.message });
   }
-
 });
 
-// 🚀 Start
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=>console.log("Running"));
+app.listen(PORT, () => console.log("Server running on port " + PORT));
