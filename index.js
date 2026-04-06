@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 
 const app = express();
 
@@ -7,33 +8,52 @@ app.get("/", (req,res)=>{
   res.send("Crypto backend running ✅");
 });
 
-// 🔄 Sync route (SAFE TEST VERSION)
+// 🔄 Sync route (REAL Coinbase FIXED)
 app.get("/sync", async (req,res)=>{
 
   try {
 
     const apiKey = process.env.COINBASE_API_KEY;
+    const apiSecret = process.env.COINBASE_API_SECRET;
+
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const method = "GET";
+    const requestPath = "/v2/accounts";
+
+    const message = timestamp + method + requestPath;
+
+    const signature = crypto
+      .createHmac("sha256", apiSecret)
+      .update(message)
+      .digest("base64"); // ✅ IMPORTANT FIX
 
     const response = await fetch("https://api.coinbase.com/v2/accounts", {
+      method: "GET",
       headers: {
-        "Authorization": `Bearer ${apiKey}`
+        "CB-ACCESS-KEY": apiKey,
+        "CB-ACCESS-SIGN": signature,
+        "CB-ACCESS-TIMESTAMP": timestamp,
+        "CB-VERSION": "2023-10-16"
       }
     });
 
     const data = await response.json();
 
+    // 👇 DEBUG (so we can see errors if any)
+    if (!data.data) {
+      return res.json({ error: data });
+    }
+
     let balances = [];
 
-    if (data.data) {
-      data.data.forEach(acc => {
-        if (parseFloat(acc.balance.amount) > 0) {
-          balances.push({
-            id: acc.currency.toLowerCase(),
-            amount: parseFloat(acc.balance.amount)
-          });
-        }
-      });
-    }
+    data.data.forEach(acc => {
+      if (parseFloat(acc.balance.amount) > 0) {
+        balances.push({
+          id: acc.currency.toLowerCase(),
+          amount: parseFloat(acc.balance.amount)
+        });
+      }
+    });
 
     res.json({balances, rewards: []});
 
