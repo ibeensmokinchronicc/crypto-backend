@@ -9,16 +9,16 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
+const API_KEY = process.env.MY_API_KEY;
 
 /* =========================
-   COINBASE (JWT - WORKING)
+   COINBASE
 ========================= */
 async function getCoinbaseAccounts() {
   try {
     const apiKey = process.env.COINBASE_API_KEY;
     let privateKey = process.env.COINBASE_API_SECRET;
 
-    // Convert \n into real line breaks
     privateKey = privateKey.replace(/\\n/g, "\n");
 
     const uri = "GET api.coinbase.com/api/v3/brokerage/accounts";
@@ -50,7 +50,6 @@ async function getCoinbaseAccounts() {
     );
 
     return response.data.accounts;
-
   } catch (err) {
     return {
       error: "coinbase failed",
@@ -60,7 +59,7 @@ async function getCoinbaseAccounts() {
 }
 
 /* =========================
-   GEMINI (WORKING)
+   GEMINI
 ========================= */
 async function getGeminiBalances() {
   try {
@@ -93,7 +92,6 @@ async function getGeminiBalances() {
     );
 
     return response.data;
-
   } catch (err) {
     return {
       error: "gemini failed",
@@ -103,27 +101,43 @@ async function getGeminiBalances() {
 }
 
 /* =========================
+   PRICES (CoinGecko)
+========================= */
+async function getPrices() {
+  try {
+    const res = await axios.get(
+      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,xrp&vs_currencies=usd"
+    );
+    return res.data;
+  } catch {
+    return {};
+  }
+}
+
+/* =========================
    ROUTES
 ========================= */
+
 app.get("/", (req, res) => {
   res.send("Crypto backend running");
 });
 
 app.get("/sync", async (req, res) => {
-  const [coinbase, gemini] = await Promise.all([
+  const key = req.headers["x-api-key"];
+
+  if (key !== API_KEY) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const [coinbase, gemini, prices] = await Promise.all([
     getCoinbaseAccounts(),
     getGeminiBalances(),
+    getPrices(),
   ]);
 
-  res.json({
-    coinbase,
-    gemini,
-  });
+  res.json({ coinbase, gemini, prices });
 });
 
-/* =========================
-   START SERVER
-========================= */
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log("Server running on port " + PORT);
 });
