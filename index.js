@@ -1,21 +1,27 @@
 const express = require("express");
+const fetch = require("node-fetch");
 const app = express();
 
-app.get("/", (req,res)=>{
-  res.send("Backend running ✅");
-});
+app.get("/sync", async (req,res)=>{
 
-app.get("/sync", (req,res)=>{
-  res.json({
-    balances: [
+  try{
+
+    // 🔥 DEMO (replace with real API later if needed)
+    let balances = [
       {id:"bitcoin", amount:0.5},
-      {id:"ethereum", amount:1.2},
-      {id:"solana", amount:3}
-    ],
-    rewards: [
+      {id:"ethereum", amount:1.2}
+    ];
+
+    let rewards = [
       {id:"ripple", amount:5}
-    ]
-  });
+    ];
+
+    res.json({balances, rewards});
+
+  }catch(e){
+    res.status(500).json({error:"failed"});
+  }
+
 });
 
 const PORT = process.env.PORT || 3000;
