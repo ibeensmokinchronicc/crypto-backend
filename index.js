@@ -13,14 +13,14 @@ const PORT = process.env.PORT || 3000;
 // ==========================
 const CB_KEY = process.env.COINBASE_API_KEY;
 
-// 🔥 FIXED LINE (IMPORTANT)
+// 🔥 IMPORTANT FIX (handles \n from Render)
 const CB_SECRET = process.env.COINBASE_API_SECRET.replace(/\\n/g, "\n");
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_SECRET = process.env.GEMINI_API_SECRET;
 
 // ==========================
-// COINBASE FUNCTION (FIXED)
+// COINBASE FUNCTION (FINAL)
 // ==========================
 async function getCoinbaseBalances() {
   try {
@@ -42,6 +42,7 @@ async function getCoinbaseBalances() {
           "CB-ACCESS-KEY": CB_KEY,
           "CB-ACCESS-SIGN": sign,
           "CB-ACCESS-TIMESTAMP": timestamp,
+          "CB-VERSION": "2023-10-16", // 🔥 required
           "Content-Type": "application/json",
         },
       }
@@ -57,7 +58,7 @@ async function getCoinbaseBalances() {
 }
 
 // ==========================
-// GEMINI FUNCTION
+// GEMINI FUNCTION (WORKING)
 // ==========================
 async function getGeminiBalances() {
   try {
