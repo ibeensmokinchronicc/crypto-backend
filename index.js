@@ -1,122 +1,113 @@
-const express = require("express");
-const cors = require("cors");
-const fetch = require("node-fetch");
-const crypto = require("crypto");
-const jwt = require("jsonwebtoken");
+import express from "express";
+import cors from "cors";
+import axios from "axios";
+import crypto from "crypto";
 
 const app = express();
 app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 
-// ================= GEMINI =================
+// ===== COINBASE CONFIG =====
+const COINBASE_API_KEY = process.env.COINBASE_API_KEY;
+const COINBASE_API_SECRET = process.env.COINBASE_API_SECRET
+  ? process.env.COINBASE_API_SECRET.replace(/\\n/g, "\n")
+  : null;
+
+// ===== GEMINI CONFIG =====
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_API_SECRET = process.env.GEMINI_API_SECRET;
+
+// ===== COINBASE FUNCTION =====
+async function getCoinbaseBalances() {
+  try {
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const method = "GET";
+    const requestPath = "/api/v3/brokerage/accounts";
+
+    const message = timestamp + method + requestPath;
+
+    const sign = crypto.createSign("SHA256");
+    sign.update(message);
+    sign.end();
+
+    const signature = sign.sign(COINBASE_API_SECRET, "base64");
+
+    const response = await axios.get(
+      "https://api.coinbase.com" + requestPath,
+      {
+        headers: {
+          "CB-ACCESS-KEY": COINBASE_API_KEY,
+          "CB-ACCESS-SIGN": signature,
+          "CB-ACCESS-TIMESTAMP": timestamp,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    return response.data.accounts || [];
+  } catch (err) {
+    return {
+      error: "coinbase failed",
+      details: err.response?.data || err.message,
+    };
+  }
+}
+
+// ===== GEMINI FUNCTION =====
 async function getGeminiBalances() {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    const apiSecret = process.env.GEMINI_API_SECRET;
-
-    if (!apiKey || !apiSecret) return [];
-
+    const url = "/v1/balances";
     const payload = {
-      request: "/v1/balances",
-      nonce: Date.now().toString()
+      request: url,
+      nonce: Date.now().toString(),
     };
 
-    const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64");
+    const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
+      "base64"
+    );
 
     const signature = crypto
-      .createHmac("sha384", apiSecret)
+      .createHmac("sha384", GEMINI_API_SECRET)
       .update(encodedPayload)
       .digest("hex");
 
-    const res = await fetch("https://api.gemini.com/v1/balances", {
-      method: "POST",
-      headers: {
-        "X-GEMINI-APIKEY": apiKey,
-        "X-GEMINI-PAYLOAD": encodedPayload,
-        "X-GEMINI-SIGNATURE": signature,
-        "Content-Type": "text/plain"
+    const response = await axios.post(
+      "https://api.gemini.com" + url,
+      {},
+      {
+        headers: {
+          "X-GEMINI-APIKEY": GEMINI_API_KEY,
+          "X-GEMINI-PAYLOAD": encodedPayload,
+          "X-GEMINI-SIGNATURE": signature,
+          "Content-Type": "text/plain",
+        },
       }
-    });
+    );
 
-    const data = await res.json();
-    return data;
-
+    return response.data;
   } catch (err) {
-    return { error: "gemini failed", details: err.message };
-  }
-}
-
-// ================= COINBASE =================
-async function getCoinbaseBalances() {
-  try {
-    const apiKey = process.env.COINBASE_API_KEY;
-    let privateKey = process.env.COINBASE_API_SECRET;
-
-    if (!apiKey || !privateKey) {
-      throw new Error("Missing Coinbase credentials");
-    }
-
-    // fix newline issue
-    privateKey = privateKey.replace(/\\n/g, "\n");
-
-    const now = Math.floor(Date.now() / 1000);
-
-    const payload = {
-      iss: apiKey,
-      sub: apiKey,
-      aud: "cdp_service",
-      iat: now,
-      exp: now + 120
+    return {
+      error: "gemini failed",
+      details: err.response?.data || err.message,
     };
-
-    const token = jwt.sign(payload, privateKey, {
-      algorithm: "ES256",
-      header: {
-        kid: apiKey,
-        nonce: crypto.randomBytes(16).toString("hex")
-      }
-    });
-
-    const res = await fetch("https://api.coinbase.com/api/v3/brokerage/accounts", {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-
-    const data = await res.json();
-    return data;
-
-  } catch (err) {
-    return { error: "coinbase failed", details: err.message };
   }
 }
 
-// ================= ROUTES =================
-app.get("/", (req, res) => {
-  res.send("Crypto backend running ✅");
-});
-
+// ===== ROUTE =====
 app.get("/sync", async (req, res) => {
-  try {
-    const gemini = await getGeminiBalances();
-    const coinbase = await getCoinbaseBalances();
+  const [coinbase, gemini] = await Promise.all([
+    getCoinbaseBalances(),
+    getGeminiBalances(),
+  ]);
 
-    res.json({
-      gemini,
-      coinbase
-    });
-
-  } catch (err) {
-    res.json({
-      error: "sync failed",
-      details: err.message
-    });
-  }
+  res.json({
+    coinbase,
+    gemini,
+  });
 });
 
-// ================= START =================
+// ===== START SERVER =====
 app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+  console.log(`Server running on port ${PORT}`);
 });
