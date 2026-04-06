@@ -1,7 +1,6 @@
 {
   "name": "crypto-backend",
   "version": "1.0.0",
-  "description": "Crypto multi-exchange backend",
   "main": "index.js",
   "type": "module",
   "scripts": {
