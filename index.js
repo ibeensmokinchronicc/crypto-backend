@@ -12,13 +12,14 @@ const PORT = process.env.PORT || 10000;
 const API_KEY = process.env.MY_API_KEY;
 
 /* =========================
-   COINBASE
+   COINBASE (JWT AUTH)
 ========================= */
 async function getCoinbaseAccounts() {
   try {
     const apiKey = process.env.COINBASE_API_KEY;
     let privateKey = process.env.COINBASE_API_SECRET;
 
+    // Fix \n formatting
     privateKey = privateKey.replace(/\\n/g, "\n");
 
     const uri = "GET api.coinbase.com/api/v3/brokerage/accounts";
@@ -35,7 +36,7 @@ async function getCoinbaseAccounts() {
         expiresIn: "60s",
         header: {
           kid: apiKey,
-          nonce: Math.random().toString(),
+          nonce: crypto.randomBytes(16).toString("hex"),
         },
       }
     );
@@ -50,6 +51,7 @@ async function getCoinbaseAccounts() {
     );
 
     return response.data.accounts;
+
   } catch (err) {
     return {
       error: "coinbase failed",
@@ -59,7 +61,7 @@ async function getCoinbaseAccounts() {
 }
 
 /* =========================
-   GEMINI
+   GEMINI (HMAC AUTH)
 ========================= */
 async function getGeminiBalances() {
   try {
@@ -92,6 +94,7 @@ async function getGeminiBalances() {
     );
 
     return response.data;
+
   } catch (err) {
     return {
       error: "gemini failed",
@@ -101,7 +104,7 @@ async function getGeminiBalances() {
 }
 
 /* =========================
-   PRICES (CoinGecko)
+   PRICE DATA (USD)
 ========================= */
 async function getPrices() {
   try {
@@ -115,13 +118,35 @@ async function getPrices() {
 }
 
 /* =========================
-   ROUTES
+   CLOUD STORAGE (SIMPLE)
 ========================= */
+let cloudData = {};
 
-app.get("/", (req, res) => {
-  res.send("Crypto backend running");
+app.post("/save", (req, res) => {
+  const key = req.headers["x-api-key"];
+
+  if (key !== API_KEY) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  cloudData[key] = req.body;
+
+  res.json({ success: true });
 });
 
+app.get("/load", (req, res) => {
+  const key = req.headers["x-api-key"];
+
+  if (key !== API_KEY) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  res.json(cloudData[key] || {});
+});
+
+/* =========================
+   MAIN SYNC ROUTE
+========================= */
 app.get("/sync", async (req, res) => {
   const key = req.headers["x-api-key"];
 
@@ -135,9 +160,23 @@ app.get("/sync", async (req, res) => {
     getPrices(),
   ]);
 
-  res.json({ coinbase, gemini, prices });
+  res.json({
+    coinbase,
+    gemini,
+    prices,
+  });
 });
 
+/* =========================
+   ROOT
+========================= */
+app.get("/", (req, res) => {
+  res.send("🚀 INSANE MODE BACKEND RUNNING");
+});
+
+/* =========================
+   START SERVER
+========================= */
 app.listen(PORT, () => {
   console.log("Server running on port " + PORT);
 });
