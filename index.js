@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const fetch = require("node-fetch");
 const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 
 const app = express();
 app.use(cors());
@@ -11,12 +12,38 @@ const PORT = process.env.PORT || 3000;
 // ================= GEMINI =================
 async function getGeminiBalances() {
   try {
-    const res = await fetch("https://api.gemini.com/v1/balances");
+    const apiKey = process.env.GEMINI_API_KEY;
+    const apiSecret = process.env.GEMINI_API_SECRET;
+
+    if (!apiKey || !apiSecret) return [];
+
+    const payload = {
+      request: "/v1/balances",
+      nonce: Date.now().toString()
+    };
+
+    const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64");
+
+    const signature = crypto
+      .createHmac("sha384", apiSecret)
+      .update(encodedPayload)
+      .digest("hex");
+
+    const res = await fetch("https://api.gemini.com/v1/balances", {
+      method: "POST",
+      headers: {
+        "X-GEMINI-APIKEY": apiKey,
+        "X-GEMINI-PAYLOAD": encodedPayload,
+        "X-GEMINI-SIGNATURE": signature,
+        "Content-Type": "text/plain"
+      }
+    });
+
     const data = await res.json();
     return data;
+
   } catch (err) {
-    console.log("Gemini error:", err);
-    return [];
+    return { error: "gemini failed", details: err.message };
   }
 }
 
@@ -24,41 +51,44 @@ async function getGeminiBalances() {
 async function getCoinbaseBalances() {
   try {
     const apiKey = process.env.COINBASE_API_KEY;
-
-    // 🔥 FIXED KEY HANDLING
     let privateKey = process.env.COINBASE_API_SECRET;
-    if (!privateKey) throw new Error("Missing private key");
 
-    // convert \\n → real new lines
+    if (!apiKey || !privateKey) {
+      throw new Error("Missing Coinbase credentials");
+    }
+
+    // fix newline issue
     privateKey = privateKey.replace(/\\n/g, "\n");
 
-    const timestamp = Math.floor(Date.now() / 1000);
-    const method = "GET";
-    const path = "/api/v3/brokerage/accounts";
+    const now = Math.floor(Date.now() / 1000);
 
-    const message = timestamp + method + path;
+    const payload = {
+      iss: apiKey,
+      sub: apiKey,
+      aud: "cdp_service",
+      iat: now,
+      exp: now + 120
+    };
 
-    const sign = crypto.createSign("SHA256");
-    sign.update(message);
-    sign.end();
+    const token = jwt.sign(payload, privateKey, {
+      algorithm: "ES256",
+      header: {
+        kid: apiKey,
+        nonce: crypto.randomBytes(16).toString("hex")
+      }
+    });
 
-    const signature = sign.sign(privateKey, "base64");
-
-    const res = await fetch("https://api.coinbase.com" + path, {
+    const res = await fetch("https://api.coinbase.com/api/v3/brokerage/accounts", {
       method: "GET",
       headers: {
-        "CB-ACCESS-KEY": apiKey,
-        "CB-ACCESS-SIGN": signature,
-        "CB-ACCESS-TIMESTAMP": timestamp,
-        "Content-Type": "application/json",
-      },
+        Authorization: `Bearer ${token}`
+      }
     });
 
     const data = await res.json();
     return data;
 
   } catch (err) {
-    console.log("Coinbase error:", err);
     return { error: "coinbase failed", details: err.message };
   }
 }
